@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sound Decibel Meter with Graph</title>
+<style>
+    body {
+        background: #22262a;
+        color: #eaf1f7;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        transition: background-color 2s ease;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+        justify-content: center;
+    }
+    .main-container {
+        max-width: 720px;
+        width: 100%;
+        background: #23272b;
+        border-radius: 18px;
+        box-shadow: 0 6px 30px rgba(0,0,0,0.22);
+        padding: 32px 42px 36px 42px;
+        transition: background-color 2s ease;
+        margin: 40px auto;
+        box-sizing: border-box;
+    }
+    .title {
+        font-size: 2em;
+        text-align: center;
+        margin-bottom: 18px;
+        font-weight: 500;
+    }
+    .db-value {
+        font-size: 5em;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .db-unit {
+        font-size: 2em;
+        text-align: center;
+        margin-bottom: 22px;
+        font-weight: 300;
+    }
+    .meter-bar {
+        height: 14px;
+        width: 100%;
+        background: #2f3337;
+        border-radius: 7px;
+        margin-bottom: 16px;
+        position: relative;
+    }
+    .meter-bar .fill {
+        height: 100%;
+        background: linear-gradient(90deg,#43c784 45%,#fa4654 98%);
+        border-radius: 7px;
+        transition: width 0.4s ease;
+        position: absolute;
+        left: 0; top: 0;
+    }
+    .db-desc {
+        text-align: center;
+        margin-bottom: 24px;
+        font-size: 1.05em;
+        color: #9ee2b6;
+    }
+    .stats-row {
+        display: flex;
+        justify-content: space-between;
+        text-align: center;
+        margin-bottom: 18px;
+    }
+    .stat-box {
+        flex: 1;
+        margin: 0 7px;
+        background: #242a32;
+        border-radius: 8px;
+        padding: 15px 0 10px 0;
+    }
+    .stat-label {
+        font-size: 0.92em;
+        color: #b3c0ce;
+        margin-bottom: 4px;
+    }
+    .stat-value {
+        font-size: 1.3em;
+        color: #fff;
+        font-weight: bold;
+    }
+    .buzz-area {
+        background: #252b31;
+        border-radius: 10px;
+        margin: 20px 0 0 0;
+        padding: 23px 0 21px 0;
+        text-align: center;
+        box-shadow: 0 2px 12px rgba(50,230,150,0.08);
+        transition: all 0.3s ease;
+        cursor: default;
+    }
+    .buzz-area:hover {
+        box-shadow: 0 8px 24px #47e6a977;
+        transform: scale(1.035);
+    }
+    .buzz-title {
+        font-size: 1.22em;
+        color: #40de92;
+        font-weight: 700;
+        margin-bottom: 9px;
+    }
+    .buzz-count {
+        font-size: 2em;
+        letter-spacing: 2px;
+        color: #fafbfb;
+        margin-bottom: 12px;
+    }
+    .reset-btn {
+        margin-top: 8px;
+        font-size: 1.1em;
+        padding: 8px 32px;
+        border: none;
+        border-radius: 5px;
+        background: linear-gradient(90deg, #43c784 40%, #88f2bb 100%);
+        color: #222;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 1.5px 5px rgba(60,250,150,0.06);
+    }
+    .reset-btn:hover {
+        background: linear-gradient(90deg, #88f2bb 40%, #43c784 100%);
+        box-shadow: 0 2.5px 12px #43c78466;
+    }
+    #graphCanvas {
+        width: 100%;
+        height: 150px;
+        border-radius: 12px;
+        background: #1e2226;
+        display: block;
+        margin: 24px 0;
+    }
+</style>
+</head>
+<body>
+<div class="main-container" id="mainContainer">
+    <div class="title">Sound Decibel Meter</div>
+    <div class="db-value" id="dbValue">--</div>
+    <div class="db-unit">dB</div>
+    <div class="meter-bar">
+        <div class="fill" id="meterFill" style="width:0"></div>
+    </div>
+    <div class="db-desc" id="dbDesc">Measuring...</div>
+    <div class="stats-row">
+        <div class="stat-box"><div class="stat-label">MIN</div><div class="stat-value" id="minDb">--</div></div>
+        <div class="stat-box"><div class="stat-label">AVG</div><div class="stat-value" id="avgDb">--</div></div>
+        <div class="stat-box"><div class="stat-label">MAX</div><div class="stat-value" id="maxDb">--</div></div>
+    </div>
+    <canvas id="graphCanvas"></canvas>
+    <div class="buzz-area" title="Buzzes triggered when volume ≥ 85 dB">
+        <div class="buzz-title">Buzzes (above 85 dB)</div>
+        <div class="buzz-count" id="buzzCount">0</div>
+        <button class="reset-btn" id="resetBtn">Reset Buzzes</button>
+    </div>
+</div>
+
+<audio id="buzzSound" src="https://www.soundjay.com/buttons/sounds/beep-04.mp3" preload="auto"></audio>
+
+<script>
+const BUZZ_SOUND_THRESHOLD = 85;
+const RED_DISPLAY_TIME = 3000;
+const RED_FADE_DURATION = 2000;
+
+let lastBuzzTimestamp = 0;
+let redEffectActive = false;
+let redStartTimestamp = null;
+let waitingForUnderThreshold = false;
+
+let buzzCount = 0,
+    minDb = Infinity,
+    maxDb = 0,
+    sumDb = 0,
+    readings = 0,
+    readingsHistory = [];
+
+const dbValue = document.getElementById("dbValue");
+const minDbElem = document.getElementById("minDb");
+const avgDbElem = document.getElementById("avgDb");
+const maxDbElem = document.getElementById("maxDb");
+const buzzCountElem = document.getElementById("buzzCount");
+const buzzSound = document.getElementById("buzzSound");
+const resetBtn = document.getElementById("resetBtn");
+const meterFill = document.getElementById("meterFill");
+const dbDesc = document.getElementById("dbDesc");
+const mainContainer = document.getElementById("mainContainer");
+const graphCanvas = document.getElementById("graphCanvas");
+const ctx = graphCanvas.getContext("2d");
+
+let displayedDb = 0;
+
+function resizeCanvas() {
+    graphCanvas.width = graphCanvas.clientWidth * window.devicePixelRatio;
+    graphCanvas.height = graphCanvas.clientHeight * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+}
+resizeCanvas();
+window.addEventListener('resize', () => {
+    resizeCanvas();
+    drawGraph();
+});
+
+function drawGraph() {
+    ctx.clearRect(0, 0, graphCanvas.clientWidth, graphCanvas.clientHeight);
+    ctx.fillStyle = "#1e2226";
+    ctx.fillRect(0, 0, graphCanvas.clientWidth, graphCanvas.clientHeight);
+
+    const w = graphCanvas.clientWidth;
+    const h = graphCanvas.clientHeight;
+    const margin = 20;
+    const graphWidth = w - margin * 2;
+    const graphHeight = h - margin * 2;
+
+    ctx.strokeStyle = "#3a3f44";
+    ctx.lineWidth = 0.5;
+    ctx.font = "10px Arial";
+    ctx.fillStyle = "#5b626a";
+    for(let i = 0; i <= 140; i += 10) {
+        let y = margin + graphHeight - (i / 140) * graphHeight;
+        ctx.beginPath();
+        ctx.moveTo(margin, y);
+        ctx.lineTo(w - margin, y);
+        ctx.stroke();
+        ctx.fillText(i + " dB", 5, y+3);
+    }
+
+    if(readingsHistory.length < 2) return;
+
+    ctx.strokeStyle = "#43c784";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    let len = readingsHistory.length;
+    let maxPoints = graphWidth;
+    let startIndex = len > maxPoints ? len - maxPoints : 0;
+
+    for(let i = startIndex; i < len; i++) {
+        let x = margin + (i - startIndex);
+        let y = margin + graphHeight - (readingsHistory[i] / 140) * graphHeight;
+        if(i === startIndex) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+}
+
+function updateStats(db) {
+    if (db < minDb) minDb = db;
+    if (db > maxDb) maxDb = db;
+    sumDb += db;
+    readings++;
+    minDbElem.textContent = minDb.toFixed(1) + " dB";
+    avgDbElem.textContent = (sumDb / readings).toFixed(1) + " dB";
+    maxDbElem.textContent = maxDb.toFixed(1) + " dB";
+}
+
+function classifyDb(db) {
+    if (db < 35) return "Quiet Room, Light Rain";
+    if (db < 55) return "Office, Urban Area";
+    if (db < 65) return "Conversation, Busy Road";
+    if (db < 85) return "Loud Traffic, Factory";
+    if (db < 100) return "Subway, Car Horn";
+    if (db < 120) return "Thunderclap, Symphony Orchestra";
+    return "Fireworks, Jet Takeoff";
+}
+
+resetBtn.onclick = () => {
+    buzzCount = 0;
+    buzzCountElem.textContent = buzzCount;
+    minDb = Infinity;
+    maxDb = 0;
+    sumDb = 0;
+    readings = 0;
+    readingsHistory.length = 0;
+    redEffectActive = false;
+    redStartTimestamp = null;
+    waitingForUnderThreshold = false;
+
+    minDbElem.textContent = "--";
+    avgDbElem.textContent = "--";
+    maxDbElem.textContent = "--";
+
+    dbDesc.textContent = "Measuring...";
+    mainContainer.style.backgroundColor = "#23272b";
+    drawGraph();
+};
+
+navigator.mediaDevices.getUserMedia({audio:true})
+.then(stream => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const micSource = audioContext.createMediaStreamSource(stream);
+    analyser.fftSize = 2048;
+    micSource.connect(analyser);
+
+    const dataArray = new Float32Array(analyser.fftSize);
+
+    function loop() {
+        analyser.getFloatTimeDomainData(dataArray);
+        let sumSquares = 0;
+        for(let i = 0; i < dataArray.length; i++) sumSquares += dataArray[i] * dataArray[i];
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+
+        let dbfs = 20 * Math.log10(Math.max(rms, 1e-6));
+        let decibels = 94 + dbfs;
+        if(decibels < 0) decibels = 0;
+        if(decibels > 140) decibels = 140;
+
+        if(decibels > displayedDb) {
+            displayedDb = decibels;
+        } else {
+            displayedDb = displayedDb * 0.95 + decibels * 0.05;
+        }
+
+        dbValue.textContent = displayedDb.toFixed(1);
+        meterFill.style.width = Math.min((displayedDb / 140) * 100, 100) + "%";
+        dbDesc.textContent = classifyDb(displayedDb);
+
+        updateStats(displayedDb);
+
+        readingsHistory.push(displayedDb);
+        if(readingsHistory.length > graphCanvas.clientWidth) readingsHistory.shift();
+
+        drawGraph();
+
+        let now = performance.now();
+
+        // enable event again only after dropping below threshold
+        if(waitingForUnderThreshold && displayedDb < BUZZ_SOUND_THRESHOLD - 1)
+            waitingForUnderThreshold = false;
+
+        // trigger event if allowed: not fading, not in hold, above threshold, and interval ok
+        if(
+            !redEffectActive &&
+            !waitingForUnderThreshold &&
+            displayedDb >= BUZZ_SOUND_THRESHOLD &&
+            now - lastBuzzTimestamp >= 5000
+        ) {
+            buzzCount++;
+            buzzCountElem.textContent = buzzCount;
+            buzzSound.currentTime = 0;
+            buzzSound.play();
+
+            lastBuzzTimestamp = now;
+            redStartTimestamp = now;
+            redEffectActive = true;
+            waitingForUnderThreshold = true;
+        }
+
+        // Red fade timing and logic
+        if (redEffectActive) {
+            let elapsed = now - redStartTimestamp;
+            if (elapsed < RED_DISPLAY_TIME) {
+                mainContainer.style.backgroundColor = "#6b2b23";
+            } else if (elapsed < RED_DISPLAY_TIME + RED_FADE_DURATION) {
+                let ratio = 1 - (elapsed - RED_DISPLAY_TIME) / RED_FADE_DURATION;
+                let r = Math.round(107 * ratio + 35 * (1 - ratio));
+                let g = Math.round(43 * ratio + 39 * (1 - ratio));
+                let b = Math.round(35 * ratio + 43 * (1 - ratio));
+                mainContainer.style.backgroundColor = `rgb(${r},${g},${b})`;
+            } else {
+                mainContainer.style.backgroundColor = "#23272b";
+                redEffectActive = false;
+            }
+        } else {
+            mainContainer.style.backgroundColor = "#23272b";
+        }
+
+        requestAnimationFrame(loop);
+    }
+    loop();
+})
+.catch(() => {
+    dbValue.textContent = "--";
+    meterFill.style.width = "0";
+    dbDesc.textContent = "Microphone access required";
+    drawGraph();
+});
+</script>
+</body>
+</html>
